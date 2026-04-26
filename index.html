@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ZIP Lookup</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #4facfe, #00f2fe);
+      margin: 0;
+      padding: 40px;
+    }
+
+    .container {
+      max-width: 420px;
+      margin: auto;
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+      text-align: center;
+    }
+
+    input {
+      width: 80%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      background: #4facfe;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .card {
+      background: #f7f9fc;
+      padding: 12px;
+      border-radius: 10px;
+      margin-top: 10px;
+      text-align: left;
+    }
+
+    .label { font-size: 12px; color: #777; }
+    .value { font-size: 16px; font-weight: bold; }
+
+    .error { color: red; margin-top: 15px; }
+
+    .note {
+      font-size: 12px;
+      color: #777;
+      margin-top: 15px;
+      text-align: left;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+  <h2>US ZIP Lookup</h2>
+
+  <input id="zip" type="text" placeholder="Enter ZIP Code" maxlength="5">
+  <br>
+  <button onclick="lookup()">Search</button>
+
+  <div id="result"></div>
+</div>
+
+<script>
+function formatTime(date, tz) {
+  const d = new Date(date);
+
+  return d.toLocaleString("en-US", {
+    timeZone: tz,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short"
+  });
+}
+
+function getFriendlyName(tz) {
+  if (tz.includes("New_York")) return "Eastern Time";
+  if (tz.includes("Chicago")) return "Central Time";
+  if (tz.includes("Denver")) return "Mountain Time";
+  if (tz.includes("Los_Angeles")) return "Pacific Time";
+  return tz;
+}
+
+function lookup() {
+  var zip = document.getElementById("zip").value;
+  var result = document.getElementById("result");
+
+  if (zip.length !== 5) {
+    result.innerHTML = "<div class='error'>Enter a valid ZIP</div>";
+    return;
+  }
+
+  result.innerHTML = "Loading...";
+
+  // Step 1: ZIP → location
+  fetch("https://api.zippopotam.us/us/" + zip)
+    .then(res => {
+      if (!res.ok) throw "Invalid ZIP";
+      return res.json();
+    })
+    .then(data => {
+      var place = data.places[0];
+      var city = place["place name"];
+      var state = place["state abbreviation"];
+      var lat = place["latitude"];
+      var lng = place["longitude"];
+
+      // Step 2: Timezone (accurate)
+      return fetch(
+        "https://api.timezonedb.com/v2.1/get-time-zone?key=E3S2I5PS86YR&format=json&by=position&lat=" 
+        + lat + "&lng=" + lng
+      )
+      .then(res => res.json())
+      .then(tzData => {
+
+        if (tzData.status !== "OK") {
+          throw "Timezone lookup failed";
+        }
+
+        var timezone = tzData.zoneName;
+        var abbreviation = tzData.abbreviation;
+        var displayName = getFriendlyName(timezone);
+
+        var now = formatTime(new Date(), timezone);
+
+        // Step 3: Sunset
+        return fetch("https://api.sunrise-sunset.org/json?lat=" + lat + "&lng=" + lng + "&formatted=0")
+          .then(res => res.json())
+          .then(sun => {
+
+            var sunset = formatTime(sun.results.sunset, timezone);
+
+            result.innerHTML =
+              "<div class='card'><div class='label'>Location</div><div class='value'>" + city + ", " + state + "</div></div>" +
+              "<div class='card'><div class='label'>Timezone</div><div class='value'>" + displayName + " (" + abbreviation + ")</div></div>" +
+              "<div class='card'><div class='label'>Current Time</div><div class='value'>" + now + "</div></div>" +
+              "<div class='card'><div class='label'>Sunset</div><div class='value'>" + sunset + "</div></div>" +
+
+              "<div class='note'>ℹ️ ZIP codes may cover multiple cities or areas. The location shown is valid, but nearby cities may also use the same ZIP.</div>";
+          });
+      });
+    })
+    .catch(err => {
+      result.innerHTML = "<div class='error'>Error: " + err + "</div>";
+    });
+}
+</script>
+
+</body>
+</html>
