@@ -76,6 +76,8 @@
 </div>
 
 <script>
+var countdownTimer = null;
+
 function formatTime(date, tz) {
   const d = new Date(date);
 
@@ -99,9 +101,53 @@ function getFriendlyName(tz) {
   return tz;
 }
 
+// Returns the current date at the location as YYYY-MM-DD
+function getLocalDate(tz) {
+  return new Date().toLocaleDateString("en-CA", { timeZone: tz });
+}
+
+// Turns milliseconds into "2h 15m 30s"
+function formatRemaining(ms) {
+  var totalSeconds = Math.floor(ms / 1000);
+  var h = Math.floor(totalSeconds / 3600);
+  var m = Math.floor((totalSeconds % 3600) / 60);
+  var s = totalSeconds % 60;
+
+  if (h > 0) return h + "h " + m + "m " + s + "s";
+  if (m > 0) return m + "m " + s + "s";
+  return s + "s";
+}
+
+// Updates the "Time Until Sunset" card every second
+function startCountdown(sunsetDate) {
+  if (countdownTimer) clearInterval(countdownTimer);
+
+  function update() {
+    var el = document.getElementById("remaining");
+    if (!el) {
+      clearInterval(countdownTimer);
+      return;
+    }
+
+    var diff = sunsetDate.getTime() - Date.now();
+
+    if (diff <= 0) {
+      el.textContent = "The sun has already set today";
+      clearInterval(countdownTimer);
+    } else {
+      el.textContent = formatRemaining(diff);
+    }
+  }
+
+  update();
+  countdownTimer = setInterval(update, 1000);
+}
+
 function lookup() {
   var zip = document.getElementById("zip").value;
   var result = document.getElementById("result");
+
+  if (countdownTimer) clearInterval(countdownTimer);
 
   if (zip.length !== 5) {
     result.innerHTML = "<div class='error'>Enter a valid ZIP</div>";
@@ -141,20 +187,27 @@ function lookup() {
 
         var now = formatTime(new Date(), timezone);
 
-        // Step 3: Sunset
-        return fetch("https://api.sunrise-sunset.org/json?lat=" + lat + "&lng=" + lng + "&formatted=0")
+        // Step 3: Sunset (using the location's local date)
+        return fetch(
+          "https://api.sunrise-sunset.org/json?lat=" + lat + "&lng=" + lng +
+          "&date=" + getLocalDate(timezone) + "&formatted=0"
+        )
           .then(res => res.json())
           .then(sun => {
 
-            var sunset = formatTime(sun.results.sunset, timezone);
+            var sunsetDate = new Date(sun.results.sunset);
+            var sunset = formatTime(sunsetDate, timezone);
 
             result.innerHTML =
               "<div class='card'><div class='label'>Location</div><div class='value'>" + city + ", " + state + "</div></div>" +
               "<div class='card'><div class='label'>Timezone</div><div class='value'>" + displayName + " (" + abbreviation + ")</div></div>" +
               "<div class='card'><div class='label'>Current Time</div><div class='value'>" + now + "</div></div>" +
               "<div class='card'><div class='label'>Sunset</div><div class='value'>" + sunset + "</div></div>" +
+              "<div class='card'><div class='label'>Time Until Sunset</div><div class='value' id='remaining'></div></div>" +
 
               "<div class='note'>ℹ️ ZIP codes may cover multiple cities or areas. The location shown is valid, but nearby cities may also use the same ZIP.</div>";
+
+            startCountdown(sunsetDate);
           });
       });
     })
